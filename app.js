@@ -1370,6 +1370,31 @@ function LabCard(lab) {
   `;
 }
 
+function HallwayPage() {
+  return Shell(`
+    <main class="simulation-shell">
+      <section class="sim-topbar">
+        <div>
+          <span class="eyebrow"><span class="live-dot"></span> 3D University Hub</span>
+          <h1>BioCad Laboratory Hallway</h1>
+        </div>
+        <div class="toolbar">
+          <button class="btn btn-secondary" data-action="go" data-page="home">Exit Hallway</button>
+        </div>
+      </section>
+      <div class="hallway-scene-wrap">
+        <div id="hallway-scene-root" class="lab-scene-root" aria-label="3D hallway with lab doors"></div>
+        <div class="hallway-overlay">
+          <div class="hallway-hud">
+            <span class="muted">University Hub</span>
+            <p class="step-narrative">Walk through the hallway and click on any lab door to enter. Use WASD or arrow keys to move around.</p>
+          </div>
+        </div>
+      </div>
+    </main>
+  `);
+}
+
 function SimulationPage() {
   const lab = getLab();
   const game = getGamePlan(lab);
@@ -2061,6 +2086,7 @@ function render() {
   const pages = {
     home: HomePage,
     labs: LabsPage,
+    hallway: HallwayPage,
     simulation: SimulationPage,
     quiz: QuizPage,
     progress: ProgressPage,
@@ -2070,7 +2096,9 @@ function render() {
   };
   app.innerHTML = (pages[state.currentPage] || HomePage)();
   bindEvents();
-  if (state.currentPage === "simulation") {
+  if (state.currentPage === "hallway") {
+    requestAnimationFrame(() => mountHallwayScene());
+  } else if (state.currentPage === "simulation") {
     startSimTimer();
     requestAnimationFrame(() => mountLabScene());
   } else {
@@ -2078,6 +2106,40 @@ function render() {
     lastSceneKey = "";
   }
   if (state.currentPage === "progress") animateCounters();
+}
+
+function mountHallwayScene() {
+  const root = document.getElementById("hallway-scene-root");
+  if (!root || !window.LabScene3D || typeof THREE === "undefined") return;
+
+  const sceneOptions = {
+    sceneMode: "hallway",
+    labsData: labs,
+    onDoorClick: (doorId) => {
+      state.selectedLabId = doorId;
+      state.selectedLabItem = null;
+      const lab = getLab(doorId);
+      const game = getGamePlan(lab);
+      const previous = state.progress[lab.id] || {};
+      state.simSeconds = lab.duration * 60;
+      state.reagentVolume = 10;
+      state.reagentConcentration = 100;
+      state.progress[lab.id] = {
+        ...previous,
+        status: "In Progress",
+        currentStep: 0,
+        completedAt: null,
+        minutes: 0,
+        mistakes: 0,
+        gameLog: [],
+        modalSeen: false,
+      };
+      persist();
+      return setPage("simulation");
+    },
+  };
+
+  window.LabScene3D.mount(root, sceneOptions);
 }
 
 function mountLabScene() {
@@ -2272,29 +2334,8 @@ function handleAction(event) {
     return render();
   }
   if (action === "launch") {
-    const lab = getLab(target.dataset.lab);
-    const game = getGamePlan(lab);
-    const previous = state.progress[lab.id] || {};
-    const shouldResume = previous.status === "In Progress" && (previous.currentStep || 0) > 0 && (previous.currentStep || 0) < game.steps.length;
-    state.selectedLabId = lab.id;
-    state.selectedLabItem = null;
-    state.simSeconds = lab.duration * 60;
-    state.reagentVolume = 10;
-    state.reagentConcentration = 100;
-    state.progress[lab.id] = shouldResume
-      ? { ...previous, status: "In Progress", gameLog: previous.gameLog || [], mistakes: previous.mistakes || 0, modalSeen: false }
-      : {
-          ...previous,
-          status: "In Progress",
-          currentStep: 0,
-          completedAt: null,
-          minutes: 0,
-          mistakes: 0,
-          gameLog: [],
-          modalSeen: false,
-        };
-    persist();
-    return setPage("simulation");
+    state.selectedLabId = target.dataset.lab || "pcr";
+    return setPage("hallway");
   }
   if (action === "select-lab-item") {
     state.selectedLabItem = target.dataset.labItem;
